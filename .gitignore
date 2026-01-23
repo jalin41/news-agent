@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+.DS_Store
+.env
+# 如果你的 config.py 包含私密 Key，建议将其设为模版，稍后用 Actions Secrets 替换
+
+# git remote add origin https://github.com/jalin41/news-agent.git
