@@ -2,6 +2,7 @@ import json
 from pydantic import BaseModel, Field, ValidationError
 from typing import List
 from config import CLIENT
+import difflib
 
 # ================= 1. 结构锁死：Pydantic 严格约束模型 =================
 # 定义每一条新闻必须长什么样，多一个字段、少一个字段、类型不对，系统直接拒收！
@@ -66,7 +67,8 @@ def process_news(news_text):
         【自适应选品算法 (核心规则)】：
         1. 顺应大势（热力加权）：先评估今日大盘趋势。如果今天科技圈爆发大事件，允许科技新闻占据 4-5 条；如果今天政策密集，则倾向于政经。完全按新闻的“炸裂程度”排座次。
         2. 广度保底（拒绝盲区）：无论某个领域多热，【政经政策、金融资本、硬核科技、民生社会、国际地缘】这 5 大领域，每个领域【至少必须保留 1 条】的席位，确保读者视野没有绝对盲区。
-        3. 优中选优：同一热点事件只选深度最好的一篇。
+        3. 绝对时效：必须且只能挑选【今日最新】（过去24小时内）发生的新闻！严禁收录两天前或更久以前的旧闻、冷饭，哪怕它再轰动！
+        4. 优中选优：同一热点事件只选深度最好的一篇。
 
         【选品红线（热度为王）】：
         1. 唯一标准：按新闻的“炸裂程度”、“公众讨论热度”和“影响力”来排座次。什么是全网都在关注的大事，就选什么！
@@ -110,11 +112,21 @@ def process_news(news_text):
             # 【核心逻辑】：遍历新抓取的数据，不重复的才塞入累加池
             for item in validated_items:
                 news_dict = item.model_dump() if hasattr(item, 'model_dump') else item
-                title_fingerprint = news_dict["title"][:5] # 取标题前5个字做指纹
-
-                if title_fingerprint not in seen_titles:
+                new_title = news_dict["title"]
+                
+                # 智能查重：将新标题与池子里所有旧标题做对比
+                is_duplicate = False
+                for seen_title in seen_titles:
+                    # 计算相似度（大于 0.65 判定为同一条新闻的不同写法）
+                    similarity = difflib.SequenceMatcher(None, new_title, seen_title).ratio()
+                    if similarity > 0.65:
+                        is_duplicate = True
+                        break # 一旦发现相似，立刻标记为重复并停止检查
+                
+                # 只有非重复的新闻，才允许进入累加池
+                if not is_duplicate:
                     accumulated_news.append(news_dict)
-                    seen_titles.add(title_fingerprint)
+                    seen_titles.add(new_title) # 现在完整保存标题，用于下次对比
                 
                 # 一旦累加池满了 10 条，立刻停止吸收
                 if len(accumulated_news) >= target_count:
