@@ -108,8 +108,10 @@ def process_news(news_text):
             seen_titles.add(title_fingerprint)
 
     # 商业级双向分类与长文补充
-    foreign_keywords = ["bbc", "路透", "reuters", "纽约时报", "华尔街", "早报"]
-    domestic_keywords = ["人民网", "新浪", "36氪", "第一财经", "界面新闻", "三联生活周刊"]
+    # foreign_keywords = ["bbc", "路透", "reuters", "纽约时报", "华尔街", "早报"]
+    # domestic_keywords = ["人民网", "新浪", "36氪", "第一财经", "界面新闻", "三联生活周刊"]
+    foreign_keywords = ["路透", "reuters", "早报", "bbc"]
+    domestic_keywords = ["人民网", "36氪", "第一财经", "界面新闻", "澎湃新闻", "少数派", "国内热点"]
     
     for news in unique_news:
         source_name = news.get("source", "").lower()
