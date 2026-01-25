@@ -3,7 +3,7 @@ name: Daily AI News Agent
 on:
   schedule:
     # 每天北京时间 08:17 和 20:17 各运行一次
-    - cron: '55 4 * * *'
+    - cron: '17 12 * * *'
   workflow_dispatch:
 
 jobs:
