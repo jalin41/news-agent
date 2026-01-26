@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field, ValidationError
 from typing import List
 from config import CLIENT
 import difflib
+import re
 
 # ================= 1. 结构锁死：Pydantic 严格约束模型 =================
 # 定义每一条新闻必须长什么样，多一个字段、少一个字段、类型不对，系统直接拒收！
@@ -38,17 +39,19 @@ def get_deep_translation(title, source):
     content = response.choices[0].message.content
     return content if content and len(content) > 10 else "【系统提示】深度解析获取超时。"
 
-def process_news(news_text):
-    import re
-    import json
-    from pydantic import ValidationError
+def process_news(indexed_news):
 
     print("🧠 [AI] 正在启动增量累加抓取机制...")
+
+    # 1. 准备只包含 ID 和 标题的“精简版资讯池”喂给 AI (大幅省钱，且防幻觉)
+    ai_input_text = "\n".join([f"ID:{item['id']} | 媒体:{item['source']} | 标题:{item['title']} | 摘要:{item['original_summary']}" for item in indexed_news])
 
     max_retries = 3         # 最多尝试 3 次
     target_count = 10       # 最终目标条数
     accumulated_news = []   # 全局新闻累加池
     seen_titles = set()     # 全局去重指纹库
+
+    news_db = {item["id"]: item for item in indexed_news}
     
     for attempt in range(max_retries):
         needed_count = target_count - len(accumulated_news)
@@ -81,7 +84,8 @@ def process_news(news_text):
         {{
           "items": [
             {{
-              "title": "新闻标题",
+              "id": 填入新闻对应的ID数字,
+              "title": "照抄原标题，一字不改",
               "summary": "80-100字深度摘要",
               "is_foreign": true/false,
               "source": "媒体",
@@ -89,7 +93,7 @@ def process_news(news_text):
             }}
           ]
         }}
-        原始数据：{news_text}
+        原始数据：{ai_input_text}
         """
 
         try:
@@ -106,52 +110,44 @@ def process_news(news_text):
             clean_json = match.group(0) if match else "{}"
             parsed_data = json.loads(clean_json)
             
-            valid_news_list = NewsList(**parsed_data)
-            validated_items = valid_news_list.items
+            for ai_item in parsed_data.get("items", []):
+                news_id = ai_item.get("id")
+                # 【核心】：通过 ID 找回 100% 正确的媒体名和链接
+                if news_id in news_db:
+                    original_data = news_db[news_id]
+                    new_title = original_data["title"] # 强制用原标题，防篡改
 
-            # 【核心逻辑】：遍历新抓取的数据，不重复的才塞入累加池
-            for item in validated_items:
-                news_dict = item.model_dump() if hasattr(item, 'model_dump') else item
-                new_title = news_dict["title"]
+                    # 智能查重
+                    is_duplicate = False
+                    for seen_title in seen_titles:
+                        if difflib.SequenceMatcher(None, new_title, seen_title).ratio() > 0.65:
+                            is_duplicate = True; break
+                    
+                    if not is_duplicate:
+                        # 组装完美数据
+                        accumulated_news.append({
+                            "title": new_title,
+                            "summary": ai_item.get("summary", "")[:250], # 截断防溢出
+                            "source": original_data["source"], # 绝对准确
+                            "url": original_data["url"]        # 绝对准确
+                        })
+                        seen_titles.add(new_title)
                 
-                # 智能查重：将新标题与池子里所有旧标题做对比
-                is_duplicate = False
-                for seen_title in seen_titles:
-                    # 计算相似度（大于 0.65 判定为同一条新闻的不同写法）
-                    similarity = difflib.SequenceMatcher(None, new_title, seen_title).ratio()
-                    if similarity > 0.65:
-                        is_duplicate = True
-                        break # 一旦发现相似，立刻标记为重复并停止检查
-                
-                # 只有非重复的新闻，才允许进入累加池
-                if not is_duplicate:
-                    accumulated_news.append(news_dict)
-                    seen_titles.add(new_title) # 现在完整保存标题，用于下次对比
-                
-                # 一旦累加池满了 10 条，立刻停止吸收
-                if len(accumulated_news) >= target_count:
-                    break
+                if len(accumulated_news) >= target_count: break
 
         except Exception as e:
-            print(f"❌ 第 {attempt + 1} 次抓取出错: {e}")
+            print(f"❌ 抓取出错: {e}")
 
-    print(f"✅ 最终成功汇聚 {len(accumulated_news)} 条独家新闻。")
-
-    # === 后续的分类与长文补充 (保持不变) ===
+    # ================= 分类与长文逻辑 =================
+    # 现在的 source 绝对是 "界面新闻"、"36氪" 等原始标准字符串，分类100%生效
     foreign_keywords = ["路透", "reuters", "联合早报", "zaobao", "bbc"]
-    domestic_keywords = ["人民网", "36氪", "第一财经", "界面新闻", "澎湃新闻", "少数派", "国内热点"]
-    
+    domestic_keywords = ["人民网", "36氪", "第一财经", "界面新闻", "澎湃新闻", "少数派", "国内热点", "杭州头条", "百度热点", "知乎热榜", "网易新闻", "搜狐"]
+
     for news in accumulated_news:
-        source_name = news.get("source", "").lower()
-        if any(kw in source_name for kw in domestic_keywords):
-            news["is_foreign"] = False
-        if any(kw in source_name for kw in foreign_keywords):
-            news["is_foreign"] = True
-            
+        source_name = news["source"].lower()
+        news["is_foreign"] = any(kw in source_name for kw in foreign_keywords)
         if news.get("is_foreign", False):
             news["full_text"] = get_deep_translation(news["title"], news["source"])
 
-    # 优先展示外媒深度文章
     accumulated_news.sort(key=lambda x: x.get("is_foreign", False))
-
     return accumulated_news
