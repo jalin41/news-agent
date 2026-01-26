@@ -52,4 +52,18 @@ def get_news():
             
     print(f"✅ [Scraper] 原始蓄水池共汇聚 {len(raw_news)} 条新鲜资讯，开始洗牌...")
     random.shuffle(raw_news)
-    return "\n".join(raw_news)
+    
+    indexed_news = []
+    for i, news_str in enumerate(raw_news):
+        # 用正则从你原来的字符串里拆出各个部分
+        match = re.search(r"【(.*?)】(.*?)\n原文:(.*?)\n链接:(.*?)\n", news_str)
+        if match:
+            indexed_news.append({
+                "id": i,
+                "source": match.group(1),
+                "title": match.group(2),
+                "original_summary": match.group(3),
+                "url": match.group(4)
+            })
+            
+    return indexed_news # 返回列表，而不是字符串
