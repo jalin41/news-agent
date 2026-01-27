@@ -189,8 +189,8 @@ def process_news(indexed_news):
         print(f"❌ 精写失败: {e}")
 
     # ================= 分类与长文逻辑 (保持不变) =================
-    foreign_keywords = ["路透", "reuters", "bbc"]
-    # domestic_keywords = ["人民网", "36氪", "第一财经", "界面新闻", "澎湃新闻", "少数派", "国内热点", "杭州头条", "百度热点", "知乎热榜", "网易新闻", "搜狐"]
+    foreign_keywords = ["路透", "reuters", "bbc", "国内热点(谷歌)"]
+    # domestic_keywords = ["人民网", "36氪", "第一财经", "界面新闻", "澎湃新闻", "少数派", "百度热点", "知乎热榜", "网易新闻", "搜狐"]
 
     for news in final_news_list:
         source_name = news["source"].lower()
