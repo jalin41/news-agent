@@ -158,8 +158,22 @@ def process_news(indexed_news):
             temperature=0.1,
             max_tokens=2500
         )
-        match2 = re.search(r"\{[\s\S]*\}", response2.choices[0].message.content)
-        parsed_data = json.loads(match2.group(0))
+        
+        raw_content = response2.choices[0].message.content
+        match2 = re.search(r"\{[\s\S]*\}", raw_content)
+        
+        # 增加安全校验：如果抓到了 JSON 格式才解析
+        if match2:
+            try:
+                parsed_data = json.loads(match2.group(0))
+            except Exception as e:
+                print(f"❌ JSON 格式损坏无法解析。错误: {e}")
+                print(f"⚠️ AI 原始返回内容: {raw_content}")
+                parsed_data = {}
+        else:
+            print("❌ AI 返回的内容中找不到 JSON 结构！")
+            print(f"⚠️ AI 原始返回内容: {raw_content}")
+            parsed_data = {}
 
         # ================= 第 3 步：完美组装 =================
         for ai_item in parsed_data.get("items", []):
