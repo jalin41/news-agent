@@ -186,7 +186,17 @@ def process_news(indexed_news):
             parsed_data = {}
 
         # ================= 第 3 步：完美组装 =================
-        for ai_item in parsed_data.get("items", []):
+        items_data = parsed_data.get("items", [])
+        
+        # 防御1：如果 AI 漏写了 [] 直接返回了单个字典，强行包成列表
+        if isinstance(items_data, dict):
+            items_data = [items_data]
+            
+        for ai_item in items_data:
+            # 防御2：如果遍历到的不是字典对象，直接跳过，防止报错
+            if not isinstance(ai_item, dict):
+                continue
+                
             news_id = ai_item.get("id")
             if news_id in news_db:
                 original_data = news_db[news_id]
