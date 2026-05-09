@@ -156,7 +156,12 @@ def process_news(indexed_news):
 
     for i in range(0, len(editing_pool_data), batch_size):
         batch_data = editing_pool_data[i:i + batch_size]
-        batch_prompt = detail_prompt_template + "\n" + "\n".join(batch_data)
+        batch_count = len(batch_data)
+        
+        # 【新增】：给 AI 下达极其强烈的物理数量约束
+        strict_command = f"\n\n【死命令】：下方共有 {batch_count} 条新闻，你必须在 JSON 的 items 数组里输出正好 {batch_count} 个对象，少一条或合并都会导致系统崩溃！\n\n"
+        
+        batch_prompt = detail_prompt_template + strict_command + "\n".join(batch_data)
         
         try:
             print(f"⏳ 正在精写第 {i+1} 到 {min(i+batch_size, len(editing_pool_data))} 条新闻...")
