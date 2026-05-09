@@ -4,9 +4,9 @@ from typing import List
 from config import CLIENT
 import difflib
 import re
+import datetime
 
 # ================= 1. 结构锁死：Pydantic 严格约束模型 =================
-# 定义每一条新闻必须长什么样，多一个字段、少一个字段、类型不对，系统直接拒收！
 class NewsItem(BaseModel):
     title: str = Field(..., max_length=50, description="新闻标题")
     summary: str = Field(..., min_length=20, max_length=250, description="新闻摘要")
@@ -34,23 +34,20 @@ def get_deep_translation(title, source):
     response = CLIENT.chat.completions.create(
         model="Qwen/Qwen2.5-32B-Instruct",
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.1 # 极低的温度，锁死创造力
+        temperature=0.1 
     )
     content = response.choices[0].message.content
     return content if content and len(content) > 10 else "【系统提示】深度解析获取超时。"
 
 def process_news(indexed_news):
-
     print("🧠 [选题总监] 正在审视全网资讯池，挑选热点...")
 
-    # 构建数据库，供后续精确查找使用
     news_db = {item["id"]: item for item in indexed_news}
     target_count = 10
     final_news_list = []
     seen_titles = set()
 
-    # ================= 第 1 步：选题总监 (只看标题，盲选 ID) =================
-    # 给 AI 的清单里【绝对不含原文】，从物理层面杜绝内容串行
+    # ================= 第 1 步：选题总监 =================
     title_only_pool = "\n".join([f"[ID:{item['id']}] 媒体:{item['source']} | 标题:{item['title']}" for item in indexed_news])
 
     selection_prompt = f"""
@@ -78,27 +75,21 @@ def process_news(indexed_news):
             model="Qwen/Qwen2.5-7B-Instruct",
             messages=[{"role": "user", "content": selection_prompt}],
             response_format={"type": "json_object"}, 
-            temperature=0.0, # 选品需要严谨，温度设为0
-            max_tokens=1000
+            temperature=0.0,
+            max_tokens=8192
         )
         match1 = re.search(r"\{[\s\S]*\}", response1.choices[0].message.content)
         selected_ids = json.loads(match1.group(0))["selected_ids"]
-        
-        # 防止 AI 没选满，做个截断
         selected_ids = selected_ids[:target_count] 
         print(f"✅ [选题总监] 成功锁定 {len(selected_ids)} 个热点 ID: {selected_ids}")
-
     except Exception as e:
         print(f"❌ 选题失败: {e}")
         return []
 
-    print("🧠 [深度编辑] 正在加载这几篇报道的完整原文进行精写...")
+    print("🧠 [深度编辑] 正在分批加载原文进行精写...")
 
-    # ================= 第 2 步：深度编辑 (引入时间戳与全中文翻译) =================
-    import datetime
-    # 获取当下的真实日期，告诉 AI 今天是哪一天
+    # ================= 第 2 步：深度编辑 (分批处理版) =================
     today_str = datetime.datetime.now().strftime("%Y年%m月%d日") 
-    
     foreign_keywords = ["路透", "reuters", "bbc"]
     editing_pool_data = []
 
@@ -110,9 +101,8 @@ def process_news(indexed_news):
             task_type = "【外网特稿：需300字长文】" if is_foreign else "【国内简讯：需100字】"
             editing_pool_data.append(f"[ID:{item['id']}] 任务:{task_type} | 标题:{item['title']} | 原文:{item['original_summary']}")
 
-    editing_pool_text = "\n".join(editing_pool_data)
-
-    detail_prompt = f"""
+    # 把 Prompt 改为基础模板，后续循环内拼接文本
+    detail_prompt_template = f"""
     你是资深主笔。当前真实时间是：{today_str}。请为以下新闻撰写摘要。
     
     【核心命令】：
@@ -144,6 +134,9 @@ def process_news(indexed_news):
     2. 字段名必须严格保持为纯英文（"id", "title", "summary"），绝对禁止使用中文键名！
     3. "id" 的值必须是原始的纯数字 ID，绝对禁止填入任务标签！
 
+    【容错机制】（防崩溃必看）：
+    如果发现某条新闻的标题或原文包含大量乱码、错别字或无法理解的乱码（如 gnore、肬 等），请不要强行解析！请直接在 summary 字段填入：“[原文损坏，已过滤]”，绝对禁止破坏 JSON 括号结构！
+
     【JSON 输出模板】（必须完全遵守）：
     {{
       "items": [
@@ -156,83 +149,76 @@ def process_news(indexed_news):
     }}
 
     待精写新闻：
-    {editing_pool_text}
-    
     """
 
-    try:
-        response2 = CLIENT.chat.completions.create(
-            model="Qwen/Qwen2.5-7B-Instruct",
-            messages=[{"role": "user", "content": detail_prompt}],
-            response_format={"type": "json_object"}, 
-            temperature=0.1,
-            max_tokens=2500
-        )
-        
-        raw_content = response2.choices[0].message.content
-        match2 = re.search(r"\{[\s\S]*\}", raw_content)
-        
-        # 增加安全校验：如果抓到了 JSON 格式才解析
-        if match2:
-            try:
-                parsed_data = json.loads(match2.group(0))
-            except Exception as e:
-                print(f"❌ JSON 格式损坏无法解析。错误: {e}")
-                print(f"⚠️ AI 原始返回内容: {raw_content}")
-                parsed_data = {}
-        else:
-            print("❌ AI 返回的内容中找不到 JSON 结构！")
-            print(f"⚠️ AI 原始返回内容: {raw_content}")
-            parsed_data = {}
+    parsed_items = []
+    batch_size = 5  # 每次喂给 AI 5 条新闻
 
-        # ================= 第 3 步：完美组装 =================
-        items_data = parsed_data.get("items", [])
+    for i in range(0, len(editing_pool_data), batch_size):
+        batch_data = editing_pool_data[i:i + batch_size]
+        batch_prompt = detail_prompt_template + "\n" + "\n".join(batch_data)
         
-        # 防御1：如果 AI 漏写了 [] 直接返回了单个字典，强行包成列表
-        if isinstance(items_data, dict):
-            items_data = [items_data]
+        try:
+            print(f"⏳ 正在精写第 {i+1} 到 {min(i+batch_size, len(editing_pool_data))} 条新闻...")
+            response2 = CLIENT.chat.completions.create(
+                model="Qwen/Qwen2.5-7B-Instruct",
+                messages=[{"role": "user", "content": batch_prompt}],
+                response_format={"type": "json_object"}, 
+                temperature=0.1,
+                top_p=0.8,
+                frequency_penalty=0.5,
+                max_tokens=8192  # 放开截断限制
+            )
             
-        for ai_item in items_data:
-            # 防御2：如果遍历到的不是字典对象，直接跳过，防止报错
-            if not isinstance(ai_item, dict):
-                continue
-                
-            news_id = ai_item.get("id")
-            if news_id in news_db:
-                original_data = news_db[news_id]
-                
-                # 【关键修复】：接收 AI 翻译好的中文标题，而不是死板地照抄英文原标题
-                new_title = ai_item.get("title", original_data["title"]) 
+            raw_content = response2.choices[0].message.content
+            match2 = re.search(r"\{[\s\S]*\}", raw_content)
+            
+            if match2:
+                try:
+                    batch_parsed = json.loads(match2.group(0))
+                    items = batch_parsed.get("items", [])
+                    if isinstance(items, dict): items = [items]
+                    parsed_items.extend(items)
+                except Exception as e:
+                    print(f"❌ 批次 JSON 格式损坏。错误: {e}")
+                    print(f"⚠️ 原始内容: {raw_content}")
+            else:
+                print("❌ 本批次找不到 JSON 结构！")
+                print(f"⚠️ 原始内容: {raw_content}")
 
-                # Difflib 智能去重 (保持不变)
-                is_duplicate = False
-                for seen_title in seen_titles:
-                    if difflib.SequenceMatcher(None, new_title, seen_title).ratio() > 0.65:
-                        is_duplicate = True; break
-                
-                if not is_duplicate:
-                    final_news_list.append({
-                        "title": new_title, 
-                        "summary": ai_item.get("summary", "")[:400], # 配合长文，放宽长度
-                        "source": original_data["source"], 
-                        "url": original_data["url"]        
-                    })
-                    seen_titles.add(new_title)
+        except Exception as e:
+            print(f"❌ 批次请求失败跳过。错误: {e}")
+            continue
 
-    except Exception as e:
-        print(f"❌ 精写失败: {e}")
+    # ================= 第 3 步：完美组装 =================
+    for ai_item in parsed_items:
+        if not isinstance(ai_item, dict):
+            continue
+            
+        news_id = ai_item.get("id")
+        if news_id in news_db:
+            original_data = news_db[news_id]
+            new_title = ai_item.get("title", original_data["title"]) 
 
-    # ================= 分类与长文逻辑 (保持不变) =================
-    foreign_keywords = ["路透", "reuters", "bbc", "国内热点(谷歌)"]
-    # domestic_keywords = ["人民网", "36氪", "第一财经", "界面新闻", "澎湃新闻", "少数派", "百度热点", "知乎热榜", "网易新闻", "搜狐"]
+            # Difflib 智能去重
+            is_duplicate = False
+            for seen_title in seen_titles:
+                if difflib.SequenceMatcher(None, new_title, seen_title).ratio() > 0.65:
+                    is_duplicate = True; break
+            
+            if not is_duplicate:
+                final_news_list.append({
+                    "title": new_title, 
+                    "summary": ai_item.get("summary", "")[:400], 
+                    "source": original_data["source"], 
+                    "url": original_data["url"]        
+                })
+                seen_titles.add(new_title)
 
+    # ================= 分类逻辑 =================
     for news in final_news_list:
         source_name = news["source"].lower()
         news["is_foreign"] = any(kw in source_name for kw in foreign_keywords)
-        if news.get("is_foreign", False):
-            # 假设你的 get_deep_translation 函数在外面定义好了
-            # news["full_text"] = get_deep_translation(news["title"], news["source"]) 
-            pass
 
     final_news_list.sort(key=lambda x: x.get("is_foreign", False))
     return final_news_list
