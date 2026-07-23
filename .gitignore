@@ -1,7 +1,34 @@
+# Python virtual environment
 venv/
-__pycache__/
-.DS_Store
-.env
-# 如果你的 config.py 包含私密 Key，建议将其设为模版，稍后用 Actions Secrets 替换
+.venv/
 
-# git remote add origin https://github.com/jalin41/news-agent.git
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Environment variables
+.env
+
+# macOS metadata
+.DS_Store
+._*
+
+# IDE settings
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Build files
+dist/
+build/
+*.egg-info/
+
+# Sensitive configuration
+# config.py
+# 如果 config.py 包含 API Key 等敏感信息，请不要提交
