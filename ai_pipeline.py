@@ -32,7 +32,7 @@ def get_deep_translation(title, source):
     【强制要求】：绝不废话，句句带肉，全部用标准简体中文。
     """
     response = CLIENT.chat.completions.create(
-        model="deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+        model="Qwen/Qwen3.5-122B-A10B",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1 
     )
@@ -72,7 +72,7 @@ def process_news(indexed_news):
 
     try:
         response1 = CLIENT.chat.completions.create(
-            model="deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+            model="Qwen/Qwen3.5-122B-A10B",
             messages=[{"role": "user", "content": selection_prompt}],
             response_format={"type": "json_object"}, 
             temperature=0.0,
@@ -166,7 +166,7 @@ def process_news(indexed_news):
         try:
             print(f"⏳ 正在精写第 {i+1} 到 {min(i+batch_size, len(editing_pool_data))} 条新闻...")
             response2 = CLIENT.chat.completions.create(
-                model="deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+                model="Qwen/Qwen3.5-122B-A10B",
                 messages=[{"role": "user", "content": batch_prompt}],
                 response_format={"type": "json_object"}, 
                 temperature=0.1,
