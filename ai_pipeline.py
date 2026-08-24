@@ -72,18 +72,34 @@ def process_news(indexed_news):
 
     try:
         response1 = CLIENT.chat.completions.create(
-            model="Qwen/Qwen3.5-122B-A10B",
+            model="Qwen/Qwen3.5-122B-A10B",  # 保持你的强力模型
             messages=[{"role": "user", "content": selection_prompt}],
-            response_format={"type": "json_object"}, 
+            # 👇 临时注释掉这行，看看是不是 API 平台对这个大模型不支持强校验
+            # response_format={"type": "json_object"}, 
             temperature=0.0,
             max_tokens=8192
         )
-        match1 = re.search(r"\{[\s\S]*\}", response1.choices[0].message.content)
-        selected_ids = json.loads(match1.group(0))["selected_ids"]
-        selected_ids = selected_ids[:target_count] 
-        print(f"✅ [选题总监] 成功锁定 {len(selected_ids)} 个热点 ID: {selected_ids}")
+        
+        # 核心：不管它返回什么，先拿出来看看！
+        raw_content1 = response1.choices[0].message.content
+        print(f"🕵️ 122B 模型原始输出:\n{raw_content1}")  # 👈 破案就靠这一行
+        
+        match1 = re.search(r"\{[\s\S]*\}", raw_content1)
+        
+        if match1:
+            try:
+                selected_ids = json.loads(match1.group(0))["selected_ids"]
+                selected_ids = selected_ids[:target_count] 
+                print(f"✅ [选题总监] 成功锁定 {len(selected_ids)} 个热点 ID: {selected_ids}")
+            except Exception as e:
+                print(f"❌ 第一步 JSON 格式解析失败。错误: {e}")
+                return []
+        else:
+            print("❌ 第一步 AI 返回的内容中没有花括号 {}！")
+            return []
+
     except Exception as e:
-        print(f"❌ 选题失败: {e}")
+        print(f"❌ 选题网络请求或 API 失败: {e}")
         return []
 
     print("🧠 [深度编辑] 正在分批加载原文进行精写...")
