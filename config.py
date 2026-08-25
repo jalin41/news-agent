@@ -50,22 +50,22 @@ RSS_FEEDS = {
         "https://hub.slarker.me/thepaper/channel/25950"
     ],
     
-    "国内热点(大盘聚合)": ["https://news.google.com/rss/headlines/section/topic/NATION?hl=zh-CN&gl=CN&ceid=CN:zh-Hans"],
+    # "国内热点(大盘聚合)": ["https://news.google.com/rss/headlines/section/topic/NATION?hl=zh-CN&gl=CN&ceid=CN:zh-Hans"],
 
     # 2. 少数派(科技与现代生活)：最顶级的数字生活、社会趋势深度媒体，官方源完全开放，极度稳定。
     "少数派(深度视点)": ["https://sspai.com/feed"],
 
     # 【国际视野】
-    "路透社(全球)": [
-        "https://news.yahoo.com/rss/world",
-        "https://rsshub.rssforever.com/reuters/world", # 节点A
-        "https://rsshub.app/reuters/world",            # 节点B (官方节点)
-        "https://hub.slarker.me/reuters/world"         # 节点C (私有备用节点)
-    ],
-    "联合早报(国际)": [
-        "https://rsshub.rssforever.com/zaobao/realtime/world",
-        "https://rsshub.app/zaobao/realtime/world",
-        "https://hub.slarker.me/zaobao/realtime/world"
-    ],
-    "BBC(中文网)": "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml"
+    #  "路透社(全球)": [
+    #     "https://news.yahoo.com/rss/world",
+    #     "https://rsshub.rssforever.com/reuters/world", # 节点A
+    #     "https://rsshub.app/reuters/world",            # 节点B (官方节点)
+    #     "https://hub.slarker.me/reuters/world"         # 节点C (私有备用节点)
+    # ],
+    #  "联合早报(国际)": [
+    #     "https://rsshub.rssforever.com/zaobao/realtime/world",
+    #     "https://rsshub.app/zaobao/realtime/world",
+    #     "https://hub.slarker.me/zaobao/realtime/world"
+    # ],
+    #  "BBC(中文网)": "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml"
 }
