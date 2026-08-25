@@ -72,34 +72,26 @@ def process_news(indexed_news):
 
     try:
         response1 = CLIENT.chat.completions.create(
-            model="Qwen/Qwen3.5-122B-A10B",  # 保持你的强力模型
+            model="Qwen/Qwen2.5-32B-Instruct",  # 👈 换回你验证过绝对可用的 32B 模型
             messages=[{"role": "user", "content": selection_prompt}],
-            # 👇 临时注释掉这行，看看是不是 API 平台对这个大模型不支持强校验
-            # response_format={"type": "json_object"}, 
             temperature=0.0,
-            max_tokens=8192
+            max_tokens=1024  # 👈 缩小预期长度，避免触发服务商的长度拦截机制
         )
         
-        # 核心：不管它返回什么，先拿出来看看！
         raw_content1 = response1.choices[0].message.content
-        print(f"🕵️ 122B 模型原始输出:\n{raw_content1}")  # 👈 破案就靠这一行
-        
         match1 = re.search(r"\{[\s\S]*\}", raw_content1)
         
+        # 👇 【关键新增】：安全校验，抓不到花括号就不会强行报错
         if match1:
-            try:
-                selected_ids = json.loads(match1.group(0))["selected_ids"]
-                selected_ids = selected_ids[:target_count] 
-                print(f"✅ [选题总监] 成功锁定 {len(selected_ids)} 个热点 ID: {selected_ids}")
-            except Exception as e:
-                print(f"❌ 第一步 JSON 格式解析失败。错误: {e}")
-                return []
+            selected_ids = json.loads(match1.group(0))["selected_ids"]
+            selected_ids = selected_ids[:target_count] 
+            print(f"✅ [选题总监] 成功锁定 {len(selected_ids)} 个热点 ID: {selected_ids}")
         else:
-            print("❌ 第一步 AI 返回的内容中没有花括号 {}！")
+            print(f"❌ 第一步未找到 JSON。AI 原始返回内容: {raw_content1}")
             return []
 
     except Exception as e:
-        print(f"❌ 选题网络请求或 API 失败: {e}")
+        print(f"❌ 选题失败: {e}")
         return []
 
     print("🧠 [深度编辑] 正在分批加载原文进行精写...")
@@ -182,13 +174,12 @@ def process_news(indexed_news):
         try:
             print(f"⏳ 正在精写第 {i+1} 到 {min(i+batch_size, len(editing_pool_data))} 条新闻...")
             response2 = CLIENT.chat.completions.create(
-                model="Qwen/Qwen3.5-122B-A10B",
+                model="Qwen/Qwen2.5-32B-Instruct",  # 👈 同样换成 32B
                 messages=[{"role": "user", "content": batch_prompt}],
-                response_format={"type": "json_object"}, 
                 temperature=0.1,
                 top_p=0.8,
                 frequency_penalty=0.5,
-                max_tokens=8192  # 放开截断限制
+                max_tokens=4096  # 👈 分批处理（每次5条）的话，4096 绝对够用了
             )
             
             raw_content = response2.choices[0].message.content
@@ -217,9 +208,16 @@ def process_news(indexed_news):
             continue
             
         news_id = ai_item.get("id")
+        
+        # 👇 【关键新增】：强制转换类型，兼容 AI 瞎输出字符串的情况
+        try:
+            news_id = int(news_id)
+        except (ValueError, TypeError):
+            continue  # 如果 AI 输出的连数字都不是（比如输出了个字母），直接跳过防崩溃
+            
         if news_id in news_db:
             original_data = news_db[news_id]
-            new_title = ai_item.get("title", original_data["title"]) 
+            new_title = ai_item.get("title", original_data["title"])
 
             # Difflib 智能去重
             is_duplicate = False
